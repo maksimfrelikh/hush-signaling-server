@@ -1,0 +1,14 @@
+{
+  "name": "hushsend-signaling",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "hushsend signaling server — pure WebRTC rendezvous/relay (never carries app data). Self-contained so it can split into its own repo later.",
+  "scripts": {
+    "start": "node signaling-server.js",
+    "dev": "node --watch signaling-server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
