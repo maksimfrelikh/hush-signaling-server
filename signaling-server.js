@@ -59,7 +59,15 @@ const TRUSTED_PROXY_HOPS = Number(process.env.TRUSTED_PROXY_HOPS) || 1; // rever
 // Resource caps (anti-DoS). App-level limits that COMPLEMENT, not replace, OS/proxy limits.
 const MAX_CONNS_TOTAL     = Number(process.env.MAX_CONNS_TOTAL)     || 5000;
 const MAX_CONNS_PER_IP    = Number(process.env.MAX_CONNS_PER_IP)    || 20;
-const MAX_PER_IP_PER_ROOM = Number(process.env.MAX_PER_IP_PER_ROOM) || 2;   // stops one IP filling a lobby
+// Per-IP-per-room cap. DEFAULT = the room's OWN seat cap (resolved per-room in the join handler, since
+// it differs by codeType): one IP may occupy a room UP TO the room cap, so the ROOM CAP — not this —
+// is the binding per-room limit. That is deliberate: a room is "a shared code for a group up to the
+// room cap that then pairs 1:1", and the natural such group (a meeting/class/office behind one NAT =
+// one shared public IP) would otherwise be wrongly throttled by a hardcoded small cap. Set
+// MAX_PER_IP_PER_ROOM to a value BELOW the room cap to RE-tighten per-room anti-domination (one IP
+// then can't fill a room) at the cost of blocking co-located groups past that value. (Global per-IP
+// connection count is still capped by MAX_CONNS_PER_IP, and create/join attempts by IP_RL_MAX.)
+const MAX_PER_IP_PER_ROOM = Number(process.env.MAX_PER_IP_PER_ROOM) || 0; // 0 / unset ⇒ the room's own seat cap
 const MAX_ROOMS           = Number(process.env.MAX_ROOMS)           || 2000;
 const ALLOC_TRIES         = 50;                                             // free-code search attempts
 const MSG_WINDOW_MS       = Number(process.env.MSG_WINDOW_MS)       || 10000;
@@ -342,10 +350,13 @@ wss.on('connection', (ws, req) => {
   // their lobby size (cfg.maxPeers). An extra joiner past the cap gets "room full".
   const maxPeers = is1to1 ? ONE_TO_ONE_MAX_PEERS : cfg.maxPeers;
   if (peers.size >= maxPeers)                         return ws.close(4002, 'room full');
-  // Per-IP-per-room cap: stops a single IP from filling a lobby on its own (anti-squat).
+  // Per-IP-per-room cap: by DEFAULT the room's OWN seat cap (`maxPeers` above), so the binding
+  // per-room limit is the room cap and a co-located group behind one IP can still fill the room.
+  // A LOWER MAX_PER_IP_PER_ROOM override re-tightens this (one IP can't fill a room then).
+  const perIpPerRoomCap = MAX_PER_IP_PER_ROOM || maxPeers;
   let sameIp = 0;
   for (const p of peers.values()) if (p._ip === ip) sameIp++;
-  if (sameIp >= MAX_PER_IP_PER_ROOM)                 return ws.close(4007, 'too many from your network');
+  if (sameIp >= perIpPerRoomCap)                     return ws.close(4007, 'too many from your network');
   // Accepted — register.
   const selfId = makeReadableId(peers);
   ws._id = selfId; ws._ip = ip; ws._roomKey = key; ws.isAlive = true;
@@ -473,7 +484,7 @@ server.listen(PORT, HOST, () => {
       ` trustProxy=${TRUST_PROXY ? 'on' : 'OFF'}` +
       ` turn=${TURN_SECRET ? `configured(${TURN_URLS.length} url${TURN_URLS.length === 1 ? '' : 's'})` : 'disabled'}` +
       ` maxConnsTotal=${MAX_CONNS_TOTAL}` +
-      ` maxPerIpPerRoom=${MAX_PER_IP_PER_ROOM}` +
+      ` maxPerIpPerRoom=${MAX_PER_IP_PER_ROOM || `room-cap(${APPS.filetransfer.maxPeers})`}` +
       ` filetransferMaxPeers=${APPS.filetransfer.maxPeers}` +
       ` roomTtlMs=${ROOM_TTL_MS}` +
       ` wordRoomTtlMs=${WORD_ROOM_TTL_MS}` +
