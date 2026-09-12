@@ -124,7 +124,13 @@ const TURN_SECRET     = process.env.TURN_SECRET || '';                       // 
 const TURN_URLS       = (process.env.TURN_URLS || '')                        // comma-separated turn(s):… URIs → array; '' ⇒ relay disabled
   .split(',').map((s) => s.trim()).filter(Boolean);
 const TURN_CRED_TTL_S = Number(process.env.TURN_CRED_TTL_S) || 3600;         // credential lifetime (~1h); the username embeds the unix-expiry
-const devOrigins = DEV ? ['http://localhost:5173'] : [];
+// Dev-only origin allowlist for a Vite dev server. Overridable (comma-separated) ONLY so a test run
+// can serve the app on another port when 5173 is taken on the host — production is unaffected, the
+// whole list is empty unless NODE_ENV !== 'production'. Without this, an app served anywhere but
+// 5173 gets every socket closed with 4003 'origin not allowed', which looks like a broken app.
+const devOrigins = DEV
+  ? (process.env.DEV_ORIGINS || 'http://localhost:5173').split(',').map((s) => s.trim()).filter(Boolean)
+  : [];
 // base32-ish alphabet without ambiguous chars (no 0/o/1/l), for longer codes if needed.
 const SAFE32 = 'abcdefghijkmnpqrstuvwxyz23456789';
 const randStr = (n, alphabet = SAFE32) =>
