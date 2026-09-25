@@ -13,10 +13,12 @@
 //         space; the human SAS is what stops a MITM.
 //       · 'word' — the WORDS method. Strictly 1:1 (ONE_TO_ONE_MAX_PEERS) to serialize secret-word
 //         guessing; PAKE over the secret words authenticates.
-//       · 'token' — the link/QR method. A 128-bit CSPRNG token (unguessable, base64url) replaces the
-//         4-digit code; strictly 1:1 so a forwarded link still reaches a SINGLE receiver. Strangers
-//         can't enumerate/squat it — interloper-resistance is STRUCTURAL, not just rate-limited. The
-//         secret S (link fragment, never sent here) authenticates client-side.
+//       · 'token' — the link/QR method AND the codeless reconnect. A 128-bit token (unguessable,
+//         base64url) the CLIENT takes (join-or-create: the first arrival opens the room); strictly
+//         1:1 so a forwarded link still reaches a SINGLE receiver. Strangers can't enumerate/squat
+//         it — interloper-resistance is STRUCTURAL, not just rate-limited. What authenticates is
+//         client-side and never sent here: the link secret S, or the pinned keys on a reconnect
+//         (whose token both devices derive from a shared secret). The two look identical to us.
 //     Every filetransfer room is HARDENED (`managed: true` → TTL *until connected* + the per-IP
 //     attempt rate-limit), self-destructing after a short TTL (freeing the code so a leaked/known one
 //     can't be farmed). A 1:1 transfer may fall back to coturn (configured client-side in iceServers).
@@ -97,12 +99,20 @@ const ONE_TO_ONE_MAX_PEERS = 2;                                              // 
 const ROOM_TTL_MS       = Number(process.env.ROOM_TTL_MS)       || 180000;   // 4-digit room lobby ONLY (~3 min, idle; link/QR moved to TOKEN_ROOM_TTL_MS)
 const WORD_ROOM_TTL_MS  = Number(process.env.WORD_ROOM_TTL_MS)  || 180000;   // words rendezvous   (~3 min, from-create)
 const TOKEN_ROOM_TTL_MS = Number(process.env.TOKEN_ROOM_TTL_MS) || 180000;   // link/QR token room (~3 min, from-create)
-// link/QR high-entropy rendezvous TOKEN (codeType=token). 16 bytes = 128 bits of CSPRNG entropy →
-// unguessable, so a stranger can't enumerate/squat it the way the 4-digit space can be scanned. It is
-// base64url with NO padding (so the link `<token>.<S>` splits cleanly on the first '.', and neither
-// half contains '.'). 16 bytes encode to exactly 22 base64url chars — the allocator emits and the
-// validator enforces that exact shape. The token is PUBLIC routing only (the secret S in the link
-// fragment is what authenticates, client-side, and never reaches the server).
+// High-entropy rendezvous TOKEN (codeType=token) — link/QR AND the codeless reconnect. 16 bytes =
+// 128 bits of entropy → unguessable, so a stranger can't enumerate/squat it the way the 4-digit space
+// can be scanned. It is base64url with NO padding (so the link `<token>.<S>` splits cleanly on the
+// first '.', and neither half contains '.'). 16 bytes encode to exactly 22 base64url chars — the
+// validator enforces that exact shape. The token is PUBLIC routing only (what authenticates is
+// client-side: the link secret S, or the pinned keys on a reconnect — neither reaches the server).
+//
+// TOKEN ROOMS ARE JOIN-OR-CREATE (since 2026-09-25): the client TAKES a token (`room=<token>`), and
+// the first arrival creates the room. A link/QR creator draws its own random token; a reconnecting
+// pair DERIVES the same token from a secret both devices hold, and each side simply asks for it —
+// whoever is first opens the room, the other finds it, and nobody carries a code. On the wire the
+// two are indistinguishable, which is the point: this server cannot tell "these two have met before"
+// from a first meeting, and cannot tell which side initiated. The `create=1&codeType=token`
+// server-allocation path is kept for compatibility but the shipped client no longer uses it.
 const TOKEN_ROOM_BYTES = 16;
 const TOKEN_ROOM_LEN   = Math.ceil((TOKEN_ROOM_BYTES * 4) / 3); // 16 → 22 base64url chars (no padding)
 const TOKEN_RE         = new RegExp(`^[A-Za-z0-9_-]{${TOKEN_ROOM_LEN}}$`);
@@ -157,14 +167,15 @@ const APPS = {
       valid: (s) => WORD_SET.has(s),                  // membership, not regex (covers "yo-yo")
       allocate: () => pickWord(),                      // one PUBLIC word from EFF short #2
     },
-    // link/QR high-entropy rendezvous (?codeType=token). A 128-bit unguessable token replaces the
-    // 4-digit code for link/QR (the link already carries it, so no UX cost) — strangers can't
-    // enumerate/squat it. PUBLIC routing only; the secret S (link fragment) still authenticates.
+    // High-entropy rendezvous (?codeType=token) — link/QR and the codeless reconnect. A 128-bit
+    // unguessable token; strangers can't enumerate/squat it. PUBLIC routing only; what authenticates
+    // is client-side (link secret S / pinned keys). JOIN-OR-CREATE: see the TOKEN comment above.
     tokenCode: {
       valid: (s) => TOKEN_RE.test(s),                 // strict format/length (base64url, 22 chars)
-      allocate: allocToken,                            // 16 CSPRNG bytes → base64url
+      allocate: allocToken,                            // 16 CSPRNG bytes → base64url (compat path only)
+      joinMayCreate: true,                             // the first arrival at a token opens its room
     },
-    joinMayCreate: false,                             // join must hit an EXISTING room
+    joinMayCreate: false,                             // 4-digit / words: join must hit an EXISTING room
     origins: ['https://hushsend.frelikh.dev', ...devOrigins],
   },
   // hushclip.frelikh.dev — shared-clipboard mesh, shared code among own devices, no fallback
@@ -204,9 +215,10 @@ function allocateCode(app, allocate) {
   }
   return null; // space too crowded
 }
-// Resolve the code shape (validator + allocator) for this connection's codeType. The default is the
-// app's 4-digit `code`/`allocate` (the ROOM method); `?codeType=word` selects the word rendezvous;
-// `?codeType=token` selects the link/QR high-entropy token rendezvous.
+// Resolve the code shape (validator + allocator [+ joinMayCreate]) for this connection's codeType.
+// The default is the app's 4-digit `code`/`allocate` (the ROOM method); `?codeType=word` selects the
+// word rendezvous; `?codeType=token` the high-entropy token rendezvous (link/QR + reconnect), which
+// is the one shape that may be brought into being by a JOIN.
 function codeSpec(cfg, codeType) {
   if (codeType === 'word'  && cfg.wordCode)  return cfg.wordCode;
   if (codeType === 'token' && cfg.tokenCode) return cfg.tokenCode;
@@ -329,8 +341,10 @@ wss.on('connection', (ws, req) => {
   if (cfg.managed && attemptRateLimited(ip))         return ws.close(4011, 'too many attempts');
   // Resolve the code shape for this codeType (4-digit by default; a word for ?codeType=word).
   const spec = codeSpec(cfg, codeType);
-  // Resolve the room: CREATE (server allocates) vs JOIN (must already exist, unless app opts in).
-  let code, key, peers;
+  // Resolve the room: CREATE (server allocates) vs JOIN (must already exist, unless the app — or the
+  // token codeType — opts into join-or-create). `created` drives the managed-room TTL below: a room
+  // that came into being on a JOIN (token join-or-create) is armed exactly like one made by CREATE.
+  let code, key, peers, created = false;
   if (wantCreate) {
     if (rooms.size >= MAX_ROOMS)                      return ws.close(4005, 'server busy');
     code = allocateCode(app, spec.allocate);
@@ -338,16 +352,18 @@ wss.on('connection', (ws, req) => {
     key = `${app}:${code}`;
     peers = new Map();
     rooms.set(key, peers);
+    created = true;
   } else {
     if (!spec.valid(roomParam))                       return ws.close(4001, 'bad room');
     code = roomParam;
     key = `${app}:${code}`;
     peers = rooms.get(key);
     if (!peers) {
-      if (!cfg.joinMayCreate)                         return ws.close(4009, 'room not found');
+      if (!cfg.joinMayCreate && !spec.joinMayCreate)  return ws.close(4009, 'room not found');
       if (rooms.size >= MAX_ROOMS)                    return ws.close(4005, 'server busy');
       peers = new Map();
       rooms.set(key, peers);
+      created = true;
     }
   }
   // Seat cap is codeType-dependent (NOT the `managed` flag): the WORDS and the link/QR TOKEN
@@ -378,17 +394,19 @@ wss.on('connection', (ws, req) => {
     sendJSON(peer, { type: 'peer-joined', peerId: selfId, device: ws._device, joinedAt: ws._joinedAt });
   }
   peers.set(selfId, ws);
-  // Managed-room lifecycle: on CREATE pin the creator (only it may destroy the room) and arm the TTL
-  // so a leaked/known rendezvous can't be guessed against forever. The 4-digit and words paths use
-  // their own TTL knobs (same 3-min default). After connected the client ignores the resulting
-  // signaling close (the P2P channel lives on).
+  // Managed-room lifecycle: whoever brought the room into being (CREATE, or the first arrival at a
+  // join-or-create token) is pinned as its creator (only it may destroy the room) and the TTL is
+  // armed so a leaked/known rendezvous can't be guessed against forever. The 4-digit, words and
+  // token paths use their own TTL knobs (same 3-min default). After connected the client ignores
+  // the resulting signaling close (the P2P channel lives on); a reconnecting client still waiting
+  // alone simply takes the token again (a fresh room, same token within its time bucket).
   //
   // The 4-digit lobby uses an IDLE timeout: each JOIN re-arms the timer, so an actively-joined lobby
   // stays alive while a stale one (ROOM_TTL_MS with no new joins) still expires and frees the code.
   // The 1:1 WORDS and TOKEN rooms do NOT re-arm — their TTL stays armed from CREATE (a re-arm would
   // let an attacker keep a 1:1 room alive by rejoining; for words it would also defeat the guessing
   // bound). Each path has its own TTL knob (same 3-min default).
-  if (cfg.managed && wantCreate) {
+  if (cfg.managed && created) {
     const ttlMs = isWordRoom ? WORD_ROOM_TTL_MS : isTokenRoom ? TOKEN_ROOM_TTL_MS : ROOM_TTL_MS;
     roomMeta.set(key, { creatorId: selfId, timer: makeTtlTimer(key, ttlMs) });
   } else if (cfg.managed && !is1to1) {
