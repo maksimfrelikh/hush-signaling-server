@@ -201,10 +201,12 @@ function makeReadableId(peers) {
   do { id = `${pick(ADJECTIVES)}-${pick(ANIMALS)}-${randomInt(100)}`; } while (peers.has(id));
   return id;
 }
-// Roster entry a peer's socket projects to others (welcome.peers / peer-joined): readable id +
-// coarse device hint + the server-stamped join time. Cosmetic metadata, never authn.
+// Roster entry a peer's socket projects to others (welcome.peers / peer-joined): readable id + the
+// server-stamped join time. Cosmetic metadata, never authn. (A client-sent coarse `device` label rode
+// along until 2026-09-27; no screen showed it, so it is no longer read or relayed — an old client's
+// `?device=` is simply ignored.)
 function peerInfo(ws) {
-  return { id: ws._id, device: ws._device || '', joinedAt: ws._joinedAt || 0 };
+  return { id: ws._id, joinedAt: ws._joinedAt || 0 };
 }
 // allocate a fresh code not currently in use for this app (atomic: handler is synchronous).
 // `allocate` is the per-codeType generator (4-digit for room/link/QR, a word for "words").
@@ -315,10 +317,6 @@ wss.on('connection', (ws, req) => {
   const wantCreate = url.searchParams.get('create') === '1';
   const roomParam  = url.searchParams.get('room') || '';
   const codeType   = url.searchParams.get('codeType') || ''; // '' = 4-digit room; 'word' = EFF short #2; 'token' = link/QR 128-bit token
-  // COARSE, cosmetic device label for the lobby roster (e.g. "Desktop" / "Mobile"). Client-supplied
-  // and relayed to room peers — NOT trusted, NOT authn (the SAS is). Strip control chars and cap the
-  // length server-side so a hostile/huge value can't bloat frames or break the roster UI.
-  const device     = String(url.searchParams.get('device') || '').split('').filter((c) => c >= ' ').join('').slice(0, 32);
   const origin     = req.headers.origin;
   const ip         = clientIp(req);
   const cfg = APPS[app];
@@ -382,16 +380,16 @@ wss.on('connection', (ws, req) => {
   // Accepted — register.
   const selfId = makeReadableId(peers);
   ws._id = selfId; ws._ip = ip; ws._roomKey = key; ws.isAlive = true;
-  ws._device = device; ws._joinedAt = Date.now(); // lobby-roster metadata (cosmetic; OUR clock for joinedAt)
+  ws._joinedAt = Date.now(); // lobby-roster metadata (cosmetic; OUR clock)
   ws._msgWindowStart = Date.now(); ws._msgCount = 0;
   ipCounts.set(ip, (ipCounts.get(ip) || 0) + 1);
   ws.on('pong', () => { ws.isAlive = true; });
   // newcomer learns its id, the room code (esp. needed for create), and the roster already here
-  // (each peer's id + coarse device + server-stamped joinedAt) so it can pick whom to pair with.
+  // (each peer's id + server-stamped joinedAt) so it can pick whom to pair with.
   sendJSON(ws, { type: 'welcome', selfId, room: code, peers: [...peers.values()].map(peerInfo) });
-  // everyone else learns a peer arrived (with its device + joinedAt for their roster)
+  // everyone else learns a peer arrived (with its joinedAt for their roster)
   for (const peer of peers.values()) {
-    sendJSON(peer, { type: 'peer-joined', peerId: selfId, device: ws._device, joinedAt: ws._joinedAt });
+    sendJSON(peer, { type: 'peer-joined', peerId: selfId, joinedAt: ws._joinedAt });
   }
   peers.set(selfId, ws);
   // Managed-room lifecycle: whoever brought the room into being (CREATE, or the first arrival at a
