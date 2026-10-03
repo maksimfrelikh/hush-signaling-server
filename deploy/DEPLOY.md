@@ -87,11 +87,16 @@ comments of [`turn/turnserver.conf.template`](turn/turnserver.conf.template).
 ### 4.2 laptop-server: take over the coturn that already runs
 
 ```bash
-bash /var/www/hush-signaling-server/deploy/deploy.sh          # brings the checkout (and deploy/turn) up to date
 cd /var/www/hush-signaling-server
+git pull --ff-only                                    # a checkout older than 225a5ed has no deploy/ at all
 sudo bash deploy/turn/install.sh --import --dry-run   # writes /etc/hushsend-turn/turn.env, shows the diff
 sudo bash deploy/turn/install.sh                      # installs, restarts coturn, checks, rolls back on failure
 ```
+
+The first pull is a plain `git pull`: `deploy/deploy.sh` does not exist in a checkout that predates it
+(2026-10-03 cost a round trip). The origin is SSH — in a non-interactive shell on laptop-server, prefix
+`SSH_AUTH_SOCK=/run/user/1000/ssh-tpm-agent.sock`. Only comments changed in `signaling-server.js`
+between `ac30e93` and `9892fde`, so that pull needs no restart.
 
 `--import` copies realm, ports, `external-ip` and the quotas from the current `/etc/turnserver.conf`
 into `/etc/hushsend-turn/turn.env`, once. The diff then shows only what the template adds: logging
