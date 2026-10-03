@@ -1,0 +1,97 @@
+# ============================================================================
+# hush-signaling-server — coturn as the TURN relay for hushsend's Reliable mode
+# ============================================================================
+# TEMPLATE. deploy/turn/install.sh renders it into /etc/turnserver.conf. Do not
+# edit the rendered file on the host: change this template (or the host's
+# /etc/hushsend-turn/turn.env) and run the installer again.
+#
+#   Values written as @…@ below are filled in per host from
+#   /etc/hushsend-turn/turn.env — except the shared secret, which is the
+#   signaling server's own TURN_SECRET, so the two copies cannot drift apart.
+#
+# WHAT THIS SERVER IS FOR. In Reliable mode a pair that cannot connect directly
+# relays its (DTLS-encrypted) DataChannel through here. The signaling server
+# hands each client a short-lived credential derived from the shared secret
+# (use-auth-secret / "TURN REST API" scheme); coturn recomputes it offline, so
+# there is no round trip between the two services.
+#
+# WHAT IT IS NOT FOR. Being hushsend's STUN server. coturn answers STUN binding
+# requests inherently, but clients are pointed at hushsend-stun-server instead
+# (VITE_STUN_URLS in hushsend's deploy/build-env.sh), the server meant to be
+# run apart from this operator. Max privacy never contacts this host at all.
+#
+# Verified against coturn 4.6.1 (Ubuntu): CI renders this file, starts coturn
+# with it and checks STUN, a correct credential and a wrong one —
+# deploy/turn/check-template.sh. Re-run that after any edit here.
+# ----------------------------------------------------------------------------
+
+# --- Time-limited credentials (REST API scheme) -------------------------------
+# A credential is valid until the unix time embedded in its username; the
+# signaling server mints username = expiry, password = base64(HMAC-SHA1(secret,
+# username)). The secret never reaches a browser.
+use-auth-secret
+static-auth-secret=@STATIC_AUTH_SECRET@
+realm=@REALM@
+
+# --- Listening -----------------------------------------------------------------
+listening-ip=0.0.0.0
+# Behind NAT coturn must advertise the PUBLIC address in relay candidates, not
+# its private one ("PUBLIC/PRIVATE"). The installer comments this line out when
+# EXTERNAL_IP is empty (a host with a public address of its own).
+external-ip=@EXTERNAL_IP@
+listening-port=@LISTEN_PORT@
+# Set explicitly: a second coturn on the same host (hushsend-stun-server) must
+# not collide with this one. Without cert/pkey nothing listens here anyway —
+# `turns:` is not offered until a certificate is configured.
+tls-listening-port=@TLS_LISTEN_PORT@
+
+# --- Relay port range ------------------------------------------------------------
+# One UDP port per allocation, and a pair where BOTH sides relay takes two — so
+# the range IS the capacity (49160-49200 is ~41 allocations). It must be open
+# in the firewall and forwarded by the router, or allocations fail although
+# signaling works. Widen the range, not total-quota, to serve more.
+min-port=@MIN_PORT@
+max-port=@MAX_PORT@
+
+# --- Quotas and bandwidth ----------------------------------------------------------
+# user-quota counts per USERNAME, and the signaling server mints the username as
+# the bare expiry second — so it is a per-second bucket, not a per-user one.
+user-quota=@USER_QUOTA@
+total-quota=@TOTAL_QUOTA@
+# Per-session ceiling in BYTES per second (5000000 = 5 MB/s). Measured
+# 2026-09-19: it is what binds on a fast path (3.84 MB/s through the live relay
+# vs 24.81 MB/s uncapped) and is still well above a residential uplink.
+max-bps=@MAX_BPS@
+
+# --- Anti-SSRF (do not remove) -----------------------------------------------------
+# A relay forwards to whatever peer a client names. These keep it from relaying
+# into private address space or cloud metadata endpoints.
+# Loopback peers are denied by default in coturn 4.6+, and newer releases no
+# longer know `no-loopback-peers` at all — an unknown option is logged as a
+# warning BEFORE log-file is read, which creates a /var/tmp/turn_*.log. So the
+# loopback range is denied explicitly instead, on every version.
+no-multicast-peers
+denied-peer-ip=0.0.0.0-0.255.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=::1
+denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+
+# --- Misc ------------------------------------------------------------------------------
+fingerprint
+# No admin CLI: no remote-management surface.
+no-cli
+# Do not advertise the coturn version to the internet.
+no-software-attribute
+
+# --- Logging: OFF ----------------------------------------------------------------------
+# A relay log is a record of who used a privacy tool, with whom and when.
+# `no-stdout-log` alone is NOT enough: with no log-file set, coturn still writes
+# turn_<pid>_<date>.log into /var/log or /var/tmp. /dev/null closes that.
+no-stdout-log
+log-file=/dev/null
+simple-log

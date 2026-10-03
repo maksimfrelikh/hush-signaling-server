@@ -1,0 +1,25 @@
+# /etc/systemd/system/hushsend-signaling.service — the unit as it runs on laptop-server.
+# On another host change User/Group (a dedicated system user is better than a login account)
+# and the two paths; then: systemctl daemon-reload && systemctl enable --now hushsend-signaling
+[Unit]
+Description=hushsend signaling server
+After=network.target
+
+[Service]
+Type=simple
+User=frelikh
+Group=frelikh
+WorkingDirectory=/var/www/hush-signaling-server
+EnvironmentFile=/var/www/hush-signaling-server/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node signaling-server.js
+Restart=on-failure
+RestartSec=2
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

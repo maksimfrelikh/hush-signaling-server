@@ -1,14 +1,26 @@
 {
-  "name": "hushsend-signaling",
+  "name": "hush-signaling-server",
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "hushsend signaling server — pure WebRTC rendezvous/relay (never carries app data). Self-contained so it can split into its own repo later.",
+  "description": "Signaling for hushsend (and hushclip): a pure WebSocket rendezvous that relays opaque SDP/ICE and never carries app data. Also holds the config of the TURN relay its operator runs.",
+  "files": [
+    "signaling-server.js",
+    "wordlist.js",
+    ".env.example"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node signaling-server.js",
-    "dev": "node --watch signaling-server.js"
+    "dev": "node --watch signaling-server.js",
+    "test": "vitest run"
   },
   "dependencies": {
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0"
   }
 }

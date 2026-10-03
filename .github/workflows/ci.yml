@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: integration tests · TURN template on a real coturn
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22' # what laptop-server runs (/usr/bin/node v22)
+          cache: npm
+      - run: npm ci
+      - run: node --check signaling-server.js
+      # coturn from Ubuntu — 4.6.1, the version laptop-server runs. The package starts its own
+      # coturn.service on 3478; nothing here uses that port.
+      - name: Install coturn
+        run: sudo apt-get update -qq && sudo apt-get install -y coturn
+      # turn-relay.test.ts is the only check anywhere that a credential this server mints opens an
+      # allocation on a coturn holding the same secret, and that one minted from another secret is
+      # refused. REQUIRE_RELAY_TEST=1 turns "coturn missing" from a skip into a failure.
+      - run: npx vitest run
+        env:
+          REQUIRE_RELAY_TEST: '1'
+      - name: The TURN template loads in coturn and authenticates with the shared secret
+        run: bash deploy/turn/check-template.sh
+      - name: Shell scripts parse
+        run: for f in deploy/*.sh deploy/turn/*.sh; do bash -n "$f"; done
