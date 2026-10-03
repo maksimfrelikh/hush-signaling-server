@@ -129,7 +129,8 @@ const IP_RL_MAX        = Number(process.env.IP_RL_MAX)        || 60;         // 
 // credential. coturn recomputes the same HMAC from the `username` and enforces the embedded expiry,
 // so there is NO server↔coturn round-trip. Leave TURN_SECRET empty to disable: the server then
 // answers turn-request with empty urls and the client stays direct-only (Max-privacy). coturn is
-// deployed SEPARATELY (see deploy/coturn.conf.example) and needs an open relay-port range + quotas.
+// configured from deploy/turn/ (install.sh renders its static-auth-secret FROM this TURN_SECRET) and
+// needs an open relay-port range + quotas.
 const TURN_SECRET     = process.env.TURN_SECRET || '';                       // == coturn static-auth-secret; SERVER-ONLY, never sent to clients
 const TURN_URLS       = (process.env.TURN_URLS || '')                        // comma-separated turn(s):… URIs → array; '' ⇒ relay disabled
   .split(',').map((s) => s.trim()).filter(Boolean);
@@ -500,7 +501,7 @@ server.listen(PORT, HOST, () => {
   // proxy: without them every client looks like loopback (127.0.0.1), so the per-IP caps collapse
   // onto a single bucket and the 4011 attempt rate-limit (loopback-exempt) silently never fires.
   // We print WHETHER TURN is configured + how many relay URLs are set, but NEVER the TURN_SECRET
-  // itself (it is shared with coturn and is server-only — see server/.env.example).
+  // itself (it is shared with coturn and is server-only — see .env.example).
   console.log(
     `[config] env=${DEV ? 'development' : 'production'}` +
       ` trustProxy=${TRUST_PROXY ? 'on' : 'OFF'}` +
