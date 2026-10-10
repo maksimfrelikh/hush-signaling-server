@@ -15,7 +15,7 @@ meant to end up under a different operator. The static frontend and the nginx vh
 | Unit | `hushsend-signaling.service` = [`deploy/hushsend-signaling.service`](hushsend-signaling.service), runs as `frelikh`, system `/usr/bin/node` (v22) |
 | Env | `/var/www/hush-signaling-server/.env`, mode 0600 — every variable is in [`.env.example`](../.env.example); `TRUST_PROXY=1`, `TURN_SECRET` set, `TURN_URLS=turn:turn.hushsend.frelikh.dev:3478` |
 | Listens | `127.0.0.1:8080` only; nginx's `hushsend` vhost proxies `/ws` and `/health` to it with `X-Real-IP` (template: hushsend `deploy/nginx.conf.example`) |
-| TURN | the distro's `coturn.service` — `turn:` on 3478, relay 49160–49200/udp, `external-ip=<public>/<lan>` (home NAT), no `turns:`. `/etc/turnserver.conf` is still the hand-written file of 2026-08-16: handing it over to [`deploy/turn/`](turn/) is § 4.2, **not done yet** (checked 2026-10-10) |
+| TURN | the distro's `coturn.service` with `/etc/turnserver.conf` rendered from [`deploy/turn/`](turn/) since 2026-10-10 (§ 4.2; the hand-written file it replaced is kept as `/etc/turnserver.conf.bak-20261010-194450`) — `turn:` on 3478, UDP relays on 49160–49200, `external-ip=<public>/<lan>` (home NAT), no `turns:`, no log file |
 | Router + ufw | 80/443 tcp (nginx), 3478 tcp+udp (TURN), 49160–49200 udp (relay range) |
 
 The box itself — network, firewall, other services, secrets — is described in the owner's private
@@ -92,6 +92,9 @@ git pull --ff-only                                    # a checkout older than 22
 sudo bash deploy/turn/install.sh --import --dry-run   # writes /etc/hushsend-turn/turn.env, shows the diff
 sudo bash deploy/turn/install.sh                      # installs, restarts coturn, checks, rolls back on failure
 ```
+
+**Done on laptop-server 2026-10-10** (`df7dba3`): the active-line diff was exactly the one described
+below, all five installer checks passed, and `verify-relay.sh` relayed 16 messages with none lost.
 
 The first pull is a plain `git pull`: `deploy/deploy.sh` does not exist in a checkout that predates it
 (2026-10-03 cost a round trip). The origin is SSH — in a non-interactive shell on laptop-server, prefix
