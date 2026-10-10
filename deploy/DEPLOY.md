@@ -15,7 +15,7 @@ meant to end up under a different operator. The static frontend and the nginx vh
 | Unit | `hushsend-signaling.service` = [`deploy/hushsend-signaling.service`](hushsend-signaling.service), runs as `frelikh`, system `/usr/bin/node` (v22) |
 | Env | `/var/www/hush-signaling-server/.env`, mode 0600 — every variable is in [`.env.example`](../.env.example); `TRUST_PROXY=1`, `TURN_SECRET` set, `TURN_URLS=turn:turn.hushsend.frelikh.dev:3478` |
 | Listens | `127.0.0.1:8080` only; nginx's `hushsend` vhost proxies `/ws` and `/health` to it with `X-Real-IP` (template: hushsend `deploy/nginx.conf.example`) |
-| TURN | the distro's `coturn.service` with `/etc/turnserver.conf` rendered from [`deploy/turn/`](turn/) — `turn:` on 3478, relay 49160–49200/udp, `external-ip=<public>/<lan>` (home NAT), no `turns:` |
+| TURN | the distro's `coturn.service` — `turn:` on 3478, relay 49160–49200/udp, `external-ip=<public>/<lan>` (home NAT), no `turns:`. `/etc/turnserver.conf` is still the hand-written file of 2026-08-16: handing it over to [`deploy/turn/`](turn/) is § 4.2, **not done yet** (checked 2026-10-10) |
 | Router + ufw | 80/443 tcp (nginx), 3478 tcp+udp (TURN), 49160–49200 udp (relay range) |
 
 The box itself — network, firewall, other services, secrets — is described in the owner's private
@@ -81,7 +81,7 @@ comments of [`turn/turnserver.conf.template`](turn/turnserver.conf.template).
 | `turn/render.sh` | renders the template; the secret comes in as `STATIC_AUTH_SECRET` |
 | `turn/install.sh` | renders with the secret from the signaling `.env`, installs `/etc/turnserver.conf`, restarts coturn, checks, rolls back on failure |
 | `turn/verify-relay.sh` | end to end: mints a credential from the LIVE signaling server and pushes data through the relay |
-| `turn/check-template.sh` | CI: the template loads in a real coturn and authenticates with the secret |
+| `turn/check-template.sh` | CI: the template loads in a real coturn, authenticates with the secret and refuses TCP relays — the last two each with a negative control |
 | `turn/lib.sh` | the shared checks |
 
 ### 4.2 laptop-server: take over the coturn that already runs
@@ -102,9 +102,21 @@ between `ac30e93` and `9892fde`, so that pull needs no restart.
 into `/etc/hushsend-turn/turn.env`, once. The diff then shows only what the template adds: logging
 off (`log-file=/dev/null` — without it coturn writes `turn_*.log` with client addresses into
 `/var/tmp` or the unit's private `/tmp`), explicit denies for `0.0.0.0/8`, `127.0.0.0/8` and IPv6
-ULA, `no-software-attribute`, an explicit `tls-listening-port`, and no `proc-user` (the systemd unit
-already runs coturn as `turnserver`). The installer refuses to run while coturn's current secret
+ULA, `no-tcp-relay` (WebRTC asks for UDP relays only), `no-software-attribute`, an explicit
+`tls-listening-port`; and it drops `proc-user` / `proc-group` (the systemd unit already runs coturn
+as `turnserver`) and `no-loopback-peers` (newer coturn no longer knows it; the explicit
+`127.0.0.0/8` deny replaces it). The installer refuses to run while coturn's current secret
 differs from the signaling `TURN_SECRET` — that state means Reliable mode is broken right now.
+
+The raw diff also carries every comment of the template. To compare only the lines coturn reads,
+sorted and with the secret masked, once `--import` has written `turn.env`:
+
+```bash
+sudo bash -c 'cd /var/www/hush-signaling-server && diff <(grep -vE "^[[:space:]]*(#|$)" /etc/turnserver.conf | sed -E "s/^[[:space:]]*static-auth-secret.*/static-auth-secret=<masked>/" | sort) <(STATIC_AUTH_SECRET=x bash deploy/turn/render.sh /etc/hushsend-turn/turn.env | grep -vE "^[[:space:]]*(#|$)" | sed -E "s/^[[:space:]]*static-auth-secret.*/static-auth-secret=<masked>/" | sort)'
+```
+
+`<` lines are what goes away, `>` lines what arrives. `use-auth-secret` and `static-auth-secret`
+must not appear in it at all.
 
 ### 4.3 A new host
 

@@ -62,6 +62,27 @@ turn_alloc_refused() { # host port secret
   printf '%s' "$out" | grep -q 'Cannot complete Allocation'
 }
 
+# Ask for an RFC 6062 TCP RELAY (`-t -T`: TCP to the server, TCP allocation) with a correctly
+# minted credential. The peer named is loopback, which this relay denies, so even a granted
+# allocation stops at CreatePermission (403) and nothing outside the host is contacted. Prints:
+#   refused  — 442 "TCP Transport is not allowed": no-tcp-relay is in effect
+#   granted  — the allocation went through (the client got as far as CreatePermission)
+#   unknown  — anything else, e.g. no answer; proves nothing either way
+turn_tcp_relay_probe() { # host port secret
+  local user pass out
+  user=$(turn_mint_user)
+  pass=$(turn_mint_password "$user" "$3")
+  out=$(_turn_timeout 40 turnutils_uclient -t -T -u "$user" -w "$pass" -p "$2" -e 127.0.0.1 -r 9 -n 1 -m 1 "$1" 2>&1 || true)
+  if printf '%s' "$out" | grep -q 'error 442'; then
+    echo refused
+  elif printf '%s' "$out" | grep -qi 'create permission'; then
+    echo granted
+  else
+    printf '%s\n' "$out" | tail -5 >&2
+    echo unknown
+  fi
+}
+
 # coturn log files newer than the given reference file, in every place coturn
 # falls back to — including the private /tmp of a systemd unit with PrivateTmp.
 turn_new_log_files() { # reference-file

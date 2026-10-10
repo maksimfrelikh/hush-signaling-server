@@ -36,6 +36,10 @@ Node + `ws`) and the config of the TURN relay (`deploy/turn/`). Start with [READ
 - **coturn must not log.** `log-file=/dev/null` stays in the template; `check-template.sh` fails if
   coturn writes a log file or prints to stdout (an option it does not know prints a warning and
   creates `/var/tmp/turn_*.log` before `log-file` is read — that is why `no-loopback-peers` is gone).
+- **UDP relays only.** `no-tcp-relay` stays in the template: WebRTC never asks for an RFC 6062 TCP
+  relay, and granting one makes the host a TCP proxy for anyone who mints a credential from the
+  public `/ws`. `check-template.sh` proves the refusal (442) and, as a negative control, that the
+  same config without the line grants one; `install.sh` re-checks it on the host after a restart.
 - The managed-room rules (TTL until connected, 1:1 seat caps for word and token rooms, the per-IP
   attempt limit, join-or-create token rooms) are explained in the header comments of
   `signaling-server.js`; keep those comments true when the code changes.

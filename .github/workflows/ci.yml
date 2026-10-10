@@ -33,7 +33,7 @@ jobs:
       - run: npx vitest run
         env:
           REQUIRE_RELAY_TEST: '1'
-      - name: The TURN template loads in coturn and authenticates with the shared secret
+      - name: The TURN template loads in coturn, authenticates with the shared secret and refuses TCP relays
         run: bash deploy/turn/check-template.sh
       - name: Shell scripts parse
         run: for f in deploy/*.sh deploy/turn/*.sh; do bash -n "$f"; done

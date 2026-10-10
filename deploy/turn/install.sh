@@ -19,10 +19,11 @@
 #
 # After restarting coturn it checks, against 127.0.0.1: the port is bound,
 # STUN answers, a credential minted from the secret is accepted, one minted
-# from another secret is refused, and no log file appeared. Any failure puts
-# the previous config back. Then it runs verify-relay.sh end to end (through
-# the live signaling server and the public address); that last step is
-# reported, not enforced — it also depends on the router.
+# from another secret is refused, a TCP relay is refused, and no log file
+# appeared. Any failure puts the previous config back. Then it runs
+# verify-relay.sh end to end (through the live signaling server and the public
+# address); that last step is reported, not enforced — it also depends on the
+# router.
 # ============================================================================
 set -euo pipefail
 
@@ -172,6 +173,11 @@ turn_alloc_accepted 127.0.0.1 "$LISTEN_PORT" "$SECRET" || rollback "a credential
 say "ok    a credential minted from TURN_SECRET is accepted"
 turn_alloc_refused 127.0.0.1 "$LISTEN_PORT" "$SECRET" || rollback "a credential from ANOTHER secret was accepted — authentication is off"
 say "ok    a credential from another secret is refused"
+case "$(turn_tcp_relay_probe 127.0.0.1 "$LISTEN_PORT" "$SECRET")" in
+  refused) say "ok    a TCP relay is refused (UDP relays only)" ;;
+  granted) rollback "coturn granted a TCP relay — no-tcp-relay did not take effect" ;;
+  *) say "WARN  the TCP relay probe got no clear answer (output above) — CI's check-template.sh proves the refusal; not rolling back for an inconclusive probe" ;;
+esac
 logs=$(turn_new_log_files "$WORK/started")
 [ -z "$logs" ] || rollback "coturn wrote log files after the restart: $logs"
 say "ok    no coturn log file"

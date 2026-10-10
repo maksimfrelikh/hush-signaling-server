@@ -16,13 +16,14 @@
 # there is no round trip between the two services.
 #
 # WHAT IT IS NOT FOR. Being hushsend's STUN server. coturn answers STUN binding
-# requests inherently, but clients are pointed at hushsend-stun-server instead
-# (VITE_STUN_URLS in hushsend's deploy/build-env.sh), the server meant to be
-# run apart from this operator. Max privacy never contacts this host at all.
+# requests inherently (a TURN server cannot switch that off), but clients are
+# meant to take STUN from hushsend-stun-server, the server run apart from this
+# operator, so that Max privacy never contacts this host at all. Where they
+# point today: VITE_STUN_URLS in hushsend's deploy/build-env.sh.
 #
 # Verified against coturn 4.6.1 (Ubuntu): CI renders this file, starts coturn
-# with it and checks STUN, a correct credential and a wrong one —
-# deploy/turn/check-template.sh. Re-run that after any edit here.
+# with it and checks STUN, a correct credential, a wrong one and a TCP relay
+# request — deploy/turn/check-template.sh. Re-run that after any edit here.
 # ----------------------------------------------------------------------------
 
 # --- Time-limited credentials (REST API scheme) -------------------------------
@@ -80,6 +81,15 @@ denied-peer-ip=169.254.0.0-169.254.255.255
 denied-peer-ip=::1
 denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
 denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+
+# --- Relay transport: UDP only (do not remove) ---------------------------------------
+# WebRTC only ever asks for UDP relays. TURN over TCP or TLS is the client's leg
+# to this server and keeps working; this line refuses only the RFC 6062 TCP
+# RELAY, which coturn grants by default. With it, this host would be a TCP proxy
+# to any public address for whoever holds a credential — and anyone can mint one
+# from the public /ws, because an Origin header is not authentication. coturn
+# answers such a request with 442 (measured on 4.6.1, 2026-10-10).
+no-tcp-relay
 
 # --- Misc ------------------------------------------------------------------------------
 fingerprint
