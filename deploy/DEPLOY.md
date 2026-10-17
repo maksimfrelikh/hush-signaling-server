@@ -7,19 +7,22 @@ live together. STUN for hushsend clients is NOT here — it is
 meant to end up under a different operator. The static frontend and the nginx vhost are in the
 [hushsend](https://github.com/maksimfrelikh/hushsend) repo.
 
-## 0. As deployed — laptop-server (hushsend.frelikh.dev)
+## 0. As deployed — netcup (hushsend.frelikh.dev), since 2026-10-17
 
 | | |
 |---|---|
-| Checkout | `/var/www/hush-signaling-server` — a git clone of this repo (the dev clone is `~/projects/hush-signaling-server`) |
-| Unit | `hushsend-signaling.service` = [`deploy/hushsend-signaling.service`](hushsend-signaling.service), runs as `frelikh`, system `/usr/bin/node` (v22) |
+| Checkout | `/var/www/hush-signaling-server` — a git clone of this repo over https (the dev clones are on the owner's Mac and on laptop-server, `~/projects/hush-signaling-server`) |
+| Unit | `hushsend-signaling.service` = [`deploy/hushsend-signaling.service`](hushsend-signaling.service), runs as `root` (the whole box does — owner decision 2026-10-16), system `/usr/bin/node` (v22) |
 | Env | `/var/www/hush-signaling-server/.env`, mode 0600 — every variable is in [`.env.example`](../.env.example); `TRUST_PROXY=1`, `TURN_SECRET` set, `TURN_URLS=turn:turn.hushsend.frelikh.dev:3478` |
 | Listens | `127.0.0.1:8080` only; nginx's `hushsend` vhost proxies `/ws` and `/health` to it with `X-Real-IP` (template: hushsend `deploy/nginx.conf.example`) |
-| TURN | the distro's `coturn.service` with `/etc/turnserver.conf` rendered from [`deploy/turn/`](turn/) since 2026-10-10 (§ 4.2; the hand-written file it replaced is kept as `/etc/turnserver.conf.bak-20261010-194450`) — `turn:` on 3478, UDP relays on 49160–49200, `external-ip=<public>/<lan>` (home NAT), no `turns:`, no log file |
-| Router + ufw | 80/443 tcp (nginx), 3478 tcp+udp (TURN), 49160–49200 udp (relay range) |
+| TURN | the distro's `coturn.service` with `/etc/turnserver.conf` rendered from [`deploy/turn/`](turn/) by `install.sh` (§ 4.3, a new host: `/etc/hushsend-turn/turn.env` written from `turn.env.example`, **no `EXTERNAL_IP`** — the public address is on the interface) — `turn:` on 3478, UDP relays on 49160–49200, no `turns:`, no log file. IPv4 only (`listening-ip=0.0.0.0`), so `turn.hushsend.frelikh.dev` is an A record without AAAA |
+| ufw | 80/443 tcp (nginx), 3478 tcp+udp (TURN), 49160–49200 udp (relay range); no router/NAT |
 
 The box itself — network, firewall, other services, secrets — is described in the owner's private
-`laptop-server/` notes, not here.
+`netcup/` notes, not here. **2026-08-16 … 2026-10-17 both services ran on laptop-server** (the owner's
+home server behind NAT: `external-ip` set, units as user `frelikh`, `sudo` for restarts); its units
+were disabled on 2026-10-17 when the move completed. § 3 and § 4.2 below describe that host and are
+kept as history.
 
 ## 1. Signaling — install on a new host
 
