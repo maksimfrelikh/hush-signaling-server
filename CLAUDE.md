@@ -56,7 +56,7 @@ the version laptop-server runs).
 On the Mac the Bash sandbox cannot bind ports: run the suite in a terminal tab
 (`PATH=/opt/homebrew/bin:$PATH npx vitest run`). Homebrew's coturn is 4.18, which no longer knows
 `--no-cli` / `--no-dtls`; the relay test passes them only to coturn ≤4.6. All 28 tests passed there
-on 2026-10-03, the relay included.
+on 2026-10-25 (vitest 5), the relay included.
 
 ## Deploy
 
