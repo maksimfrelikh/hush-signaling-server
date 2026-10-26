@@ -2,6 +2,7 @@
   "name": "hush-signaling-server",
   "private": true,
   "version": "0.0.0",
+  "license": "MIT",
   "type": "module",
   "description": "Signaling for hushsend (and hushclip): a pure WebSocket rendezvous that relays opaque SDP/ICE and never carries app data. Also holds the config of the TURN relay its operator runs.",
   "files": [
