@@ -19,11 +19,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22' # what laptop-server runs (/usr/bin/node v22)
+          node-version: '26' # the LTS line; netcup follows it via NodeSource (deploy/DEPLOY.md § 0)
           cache: npm
       - run: npm ci
       - run: node --check signaling-server.js
-      # coturn from Ubuntu — 4.6.1, the version laptop-server runs. The package starts its own
+      # coturn from Ubuntu — 4.6.1, the version netcup runs. The package starts its own
       # coturn.service on 3478; nothing here uses that port.
       - name: Install coturn
         run: sudo apt-get update -qq && sudo apt-get install -y coturn
