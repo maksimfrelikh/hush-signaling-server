@@ -11,7 +11,7 @@
     ".env.example"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=26"
   },
   "scripts": {
     "start": "node signaling-server.js",

@@ -12,7 +12,7 @@ meant to end up under a different operator. The static frontend and the nginx vh
 | | |
 |---|---|
 | Checkout | `/var/www/hush-signaling-server` — a git clone of this repo over https (the dev clones are on the owner's Mac and on laptop-server, `~/projects/hush-signaling-server`) |
-| Unit | `hushsend-signaling.service` = [`deploy/hushsend-signaling.service`](hushsend-signaling.service), runs as `root` (the whole box does — owner decision 2026-10-16), `/usr/bin/node` from NodeSource's `node_24.x` apt repo (Node 24 LTS, v24.22.1 on 2026-10-26; the box had v22 at the move) |
+| Unit | `hushsend-signaling.service` = [`deploy/hushsend-signaling.service`](hushsend-signaling.service), runs as `root` (the whole box does — owner decision 2026-10-16), `/usr/bin/node` from NodeSource's `node_26.x` apt repo (Node 26 LTS, v26.12.1 since 2026-10-28; 24 before that, v22 at the move) |
 | Env | `/var/www/hush-signaling-server/.env`, mode 0600 — every variable is in [`.env.example`](../.env.example); `TRUST_PROXY=1`, `TURN_SECRET` set, `TURN_URLS=turn:turn.hushsend.frelikh.dev:3478` |
 | Listens | `127.0.0.1:8080` only; nginx's `hushsend` vhost proxies `/ws` and `/health` to it with `X-Real-IP` (template: hushsend `deploy/nginx.conf.example`) |
 | TURN | the distro's `coturn.service` with `/etc/turnserver.conf` rendered from [`deploy/turn/`](turn/) by `install.sh` (§ 4.3, a new host: `/etc/hushsend-turn/turn.env` written from `turn.env.example`, **no `EXTERNAL_IP`** — the public address is on the interface) — `turn:` on 3478, UDP relays on 49160–49200, no `turns:`, no log file. IPv4 only (`listening-ip=0.0.0.0`), so `turn.hushsend.frelikh.dev` is an A record without AAAA |
@@ -45,7 +45,7 @@ journalctl -u hushsend-signaling -n 5 | grep '\[config\]'
   `PING_MS` (30 s).
 - The allowed browser Origins are in the code (`APPS` in `signaling-server.js`):
   `https://hushsend.frelikh.dev` for `filetransfer`. A deployment under another domain changes it there.
-- Node 22 or newer.
+- Node 26 (`engines` in `package.json`; CI and netcup run 26, see § 0).
 
 ## 2. Updates
 
