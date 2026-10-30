@@ -51,7 +51,7 @@ Node + `ws`) and the config of the TURN relay (`deploy/turn/`). Start with [READ
 `REQUIRE_RELAY_TEST=1`). Each file spawns its own server on a fixed loopback port (8091–8110, TURN
 3489) — keep new ones distinct, files run in parallel. `bash deploy/turn/check-template.sh` checks
 the TURN template against a real coturn. CI runs all of it on every push (coturn 4.6.1 from Ubuntu,
-the version laptop-server runs).
+the version netcup runs).
 
 On the Mac the Bash sandbox cannot bind ports: run the suite in a terminal tab
 (`PATH=/opt/homebrew/bin:$PATH npx vitest run`). Homebrew's coturn is 4.18, which no longer knows
@@ -62,4 +62,4 @@ on 2026-10-25 (vitest 5), the relay included.
 
 Deploys are the owner's: they run `deploy/deploy.sh` and `deploy/turn/install.sh` on the host. Write
 the change, say which command to run, and verify afterwards (`curl 127.0.0.1:8080/health`, the
-`[config]` line, `deploy/turn/verify-relay.sh`). Keep deploy/DEPLOY.md § 0 true for laptop-server.
+`[config]` line, `deploy/turn/verify-relay.sh`). Keep deploy/DEPLOY.md § 0 true for netcup.
