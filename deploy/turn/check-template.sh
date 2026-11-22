@@ -22,8 +22,8 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=deploy/turn/lib.sh
 . "$HERE/lib.sh"
 
-for tool in turnserver turnutils_stunclient turnutils_uclient openssl; do
-  command -v "$tool" >/dev/null || { echo "need $tool (package: coturn / openssl)" >&2; exit 2; }
+for tool in turnserver turnutils_stunclient turnutils_uclient openssl node; do
+  command -v "$tool" >/dev/null || { echo "need $tool (package: coturn / openssl / nodejs)" >&2; exit 2; }
 done
 
 WORK=$(mktemp -d)

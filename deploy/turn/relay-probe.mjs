@@ -2,12 +2,14 @@ import dgram from 'node:dgram';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 
-const [host, portArg] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const allocateOnly = args[0] === '--allocate-only';
+const [host, portArg] = allocateOnly ? args.slice(1) : args;
 const port = Number(portArg || 3478);
 const username = process.env.TURN_USERNAME || '';
 const password = process.env.TURN_CREDENTIAL || '';
 if (!host || !username || !password) {
-  console.error('usage: TURN_USERNAME=… TURN_CREDENTIAL=… node relay-probe.mjs <host> [port]');
+  console.error('usage: TURN_USERNAME=… TURN_CREDENTIAL=… node relay-probe.mjs [--allocate-only] <host> [port]');
   process.exit(2);
 }
 
@@ -139,18 +141,23 @@ let code = 1;
 try {
   const { address } = await lookup(host, { family: 4 });
   a = new Client(address);
-  b = new Client(address);
   await a.allocate();
-  await b.allocate();
-  await a.permit(b.relay.ip);
-  await b.permit(a.relay.ip);
-  for (let i = 0; i < MESSAGES; i++) {
-    a.sendTo(b.relay, Buffer.from(`relay-probe ${i}`));
-    await sleep(100);
+  if (allocateOnly) {
+    console.log('allocated');
+    code = 0;
+  } else {
+    b = new Client(address);
+    await b.allocate();
+    await a.permit(b.relay.ip);
+    await b.permit(a.relay.ip);
+    for (let i = 0; i < MESSAGES; i++) {
+      a.sendTo(b.relay, Buffer.from(`relay-probe ${i}`));
+      await sleep(100);
+    }
+    for (let i = 0; i < 20 && b.received < MESSAGES; i++) await sleep(100);
+    console.log(`relayed ${b.received} of ${MESSAGES} messages`);
+    code = b.received > 0 ? 0 : 1;
   }
-  for (let i = 0; i < 20 && b.received < MESSAGES; i++) await sleep(100);
-  console.log(`relayed ${b.received} of ${MESSAGES} messages`);
-  code = b.received > 0 ? 0 : 1;
 } catch (err) {
   console.log(err.message);
 } finally {

@@ -64,7 +64,7 @@ say() { printf '%s\n' "$*"; }
 die() { printf 'FAIL  %s\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "run as root: sudo bash $0 $*"
-for tool in docker openssl; do
+for tool in docker openssl node; do
   command -v "$tool" >/dev/null 2>&1 || die "missing $tool"
 done
 

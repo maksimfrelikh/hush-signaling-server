@@ -1,9 +1,11 @@
 # shellcheck shell=bash
 # ============================================================================
-# Shared checks for the TURN relay — sourced by install.sh and verify-relay.sh
-# (on the host) and check-template.sh (in CI). Needs openssl, and coturn's
+# Shared checks for the TURN relay — sourced by install.sh (on the host) and
+# check-template.sh (in CI). Needs openssl, node (relay-probe.mjs), and coturn's
 # client tools (turnutils_*) or docker to run them from the image below.
 # ============================================================================
+
+TURN_LIB_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # coturn itself: its official image, pinned by digest so a re-pushed tag cannot change what runs.
 # Ubuntu's coturn package (universe) gets no security fixes. To upgrade, change this line and the
@@ -44,23 +46,19 @@ turn_stun_check() { # host port
   printf '%s\n' "$addr"
 }
 
-# One allocation attempt; prints turnutils_uclient's output. `-y` makes the client
-# relay to itself, so no outside peer is needed. Against a relay that denies
-# loopback and private peers (this one does), the data step is refused with a
-# 403 AFTER a successful allocation — which is fine: what these checks read is
-# whether the ALLOCATION (i.e. the credential) was accepted.
+# One allocation attempt with relay-probe.mjs, which releases the allocation it
+# gets. Prints "allocated", or "allocation refused: <code> <reason>".
 turn_alloc_attempt() { # host port user password
-  _turn_timeout 40 "${TURN_UCLIENT[@]}" -y -u "$3" -w "$4" -p "$2" -n 1 -m 1 "$1" 2>&1 || true
+  _turn_timeout 40 env TURN_USERNAME="$3" TURN_CREDENTIAL="$4" node "$TURN_LIB_DIR/relay-probe.mjs" --allocate-only "$1" "$2" 2>&1 || true
 }
 
-# A correctly minted credential must be accepted. coturn's client prints
-# "Cannot complete Allocation" when the credential is refused.
+# A correctly minted credential must be accepted.
 turn_alloc_accepted() { # host port secret
   local user pass out
   user=$(turn_mint_user)
   pass=$(turn_mint_password "$user" "$3")
   out=$(turn_alloc_attempt "$1" "$2" "$user" "$pass")
-  if printf '%s' "$out" | grep -q 'Cannot complete Allocation'; then
+  if ! printf '%s' "$out" | grep -qx 'allocated'; then
     printf '%s\n' "$out" | tail -8 >&2
     return 1
   fi
@@ -74,7 +72,7 @@ turn_alloc_refused() { # host port secret
   user=$(turn_mint_user)
   pass=$(turn_mint_password "$user" "not-$3")
   out=$(turn_alloc_attempt "$1" "$2" "$user" "$pass")
-  printf '%s' "$out" | grep -q 'Cannot complete Allocation'
+  printf '%s' "$out" | grep -q '^allocation refused: 401'
 }
 
 # Ask for an RFC 6062 TCP RELAY (`-t -T`: TCP to the server, TCP allocation) with a correctly
