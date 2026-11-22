@@ -67,10 +67,12 @@ USERNAME=$(printf '%s' "$CREDS" | cut -f2)
 CREDENTIAL=$(printf '%s' "$CREDS" | cut -f3)
 
 NOW=$(date +%s)
+EXPIRY=${USERNAME%%:*}
+[[ "$EXPIRY" =~ ^[0-9]+$ ]] || fail "the minted username does not start with a unix-expiry — coturn will refuse every allocation"
 printf '  urls      : %s\n' "$URLS"
-printf '  username  : %s (expires in %ss)\n' "$USERNAME" "$((USERNAME - NOW))"
+printf '  username  : %s (expires in %ss)\n' "$USERNAME" "$((EXPIRY - NOW))"
 printf '  credential: %s chars (never printed)\n' "${#CREDENTIAL}"
-[ "$USERNAME" -gt "$NOW" ] || fail "the minted username is not a FUTURE unix-expiry — coturn will refuse every allocation"
+[ "$EXPIRY" -gt "$NOW" ] || fail "the minted username is not a FUTURE unix-expiry — coturn will refuse every allocation"
 
 # TURN_URLS is a client-facing hostname, not a secret; take the first one and split host/port.
 FIRST_URL=$(printf '%s' "$URLS" | cut -d, -f1)
