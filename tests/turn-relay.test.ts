@@ -237,7 +237,7 @@ describe.skipIf(!HAVE_COTURN)('Reliable mode — a minted credential really open
     expect(creds.urls).toEqual([`turn:127.0.0.1:${TURN_PORT}`]);
     // The username is the expiry coturn enforces offline — it must be in the future, or every
     // allocation is refused no matter how right the secret is.
-    expect(Number(creds.username)).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    expect(Number(creds.username.split(':')[0])).toBeGreaterThan(Math.floor(Date.now() / 1000));
 
     const { relayed, out } = relayAttempt(creds.username, creds.credential);
     expect(relayed, `no bytes crossed the relay:\n${out}`).toBeGreaterThan(0);

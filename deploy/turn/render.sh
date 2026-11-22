@@ -23,13 +23,13 @@ fi
 
 # turn.env is ours: plain KEY=value lines. Read it in a subshell-free way and
 # export only the keys we know, so nothing else in the file leaks into the run.
-REALM= LISTEN_PORT= TLS_LISTEN_PORT= RELAY_IP= EXTERNAL_IP= MIN_PORT= MAX_PORT= USER_QUOTA= TOTAL_QUOTA= MAX_BPS=
+REALM= LISTEN_PORT= TLS_LISTEN_PORT= RELAY_IP= EXTERNAL_IP= MIN_PORT= MAX_PORT= USER_QUOTA= TOTAL_QUOTA= MAX_BPS= BPS_CAPACITY=
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in '' | '#'*) continue ;; esac
   key=${line%%=*}
   val=${line#*=}
   case "$key" in
-    REALM | LISTEN_PORT | TLS_LISTEN_PORT | RELAY_IP | EXTERNAL_IP | MIN_PORT | MAX_PORT | USER_QUOTA | TOTAL_QUOTA | MAX_BPS)
+    REALM | LISTEN_PORT | TLS_LISTEN_PORT | RELAY_IP | EXTERNAL_IP | MIN_PORT | MAX_PORT | USER_QUOTA | TOTAL_QUOTA | MAX_BPS | BPS_CAPACITY)
       printf -v "$key" '%s' "$val" ;;
     *) echo "render: $ENV_FILE: unknown key '$key' (ignored)" >&2 ;;
   esac
@@ -39,7 +39,7 @@ fail() { echo "render: $*" >&2; exit 2; }
 [ -n "${STATIC_AUTH_SECRET:-}" ] || fail "STATIC_AUTH_SECRET is empty — pass the signaling server's TURN_SECRET"
 case "$STATIC_AUTH_SECRET" in *[[:space:]]*) fail "the secret contains whitespace — coturn would truncate it" ;; esac
 [ -n "$REALM" ] || fail "$ENV_FILE: REALM is empty"
-for v in LISTEN_PORT TLS_LISTEN_PORT MIN_PORT MAX_PORT USER_QUOTA TOTAL_QUOTA MAX_BPS; do
+for v in LISTEN_PORT TLS_LISTEN_PORT MIN_PORT MAX_PORT USER_QUOTA TOTAL_QUOTA MAX_BPS BPS_CAPACITY; do
   [[ "${!v}" =~ ^[0-9]+$ ]] || fail "$ENV_FILE: $v must be a number, got '${!v}'"
 done
 [ "$MIN_PORT" -lt "$MAX_PORT" ] || fail "MIN_PORT ($MIN_PORT) must be below MAX_PORT ($MAX_PORT)"
@@ -50,7 +50,7 @@ if [ -n "$EXTERNAL_IP" ] && ! [[ "$EXTERNAL_IP" =~ ^[0-9a-fA-F.:]+(/[0-9a-fA-F.:
   fail "EXTERNAL_IP must be PUBLIC or PUBLIC/PRIVATE, got '$EXTERNAL_IP'"
 fi
 
-export STATIC_AUTH_SECRET REALM LISTEN_PORT TLS_LISTEN_PORT RELAY_IP EXTERNAL_IP MIN_PORT MAX_PORT USER_QUOTA TOTAL_QUOTA MAX_BPS
+export STATIC_AUTH_SECRET REALM LISTEN_PORT TLS_LISTEN_PORT RELAY_IP EXTERNAL_IP MIN_PORT MAX_PORT USER_QUOTA TOTAL_QUOTA MAX_BPS BPS_CAPACITY
 
 out=$(awk '
   function repl(s, key, val,    out, i) {
@@ -67,7 +67,7 @@ out=$(awk '
       print "# external-ip is not set: this host has its public address on an interface"
       next
     }
-    n = split("STATIC_AUTH_SECRET REALM LISTEN_PORT TLS_LISTEN_PORT RELAY_IP EXTERNAL_IP MIN_PORT MAX_PORT USER_QUOTA TOTAL_QUOTA MAX_BPS", keys, " ")
+    n = split("STATIC_AUTH_SECRET REALM LISTEN_PORT TLS_LISTEN_PORT RELAY_IP EXTERNAL_IP MIN_PORT MAX_PORT USER_QUOTA TOTAL_QUOTA MAX_BPS BPS_CAPACITY", keys, " ")
     for (k = 1; k <= n; k++) line = repl(line, "@" keys[k] "@", ENVIRON[keys[k]])
     print line
   }

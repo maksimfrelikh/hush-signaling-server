@@ -8,12 +8,12 @@ import { createHmac } from 'node:crypto';
  * signaling-server.js (step 6d, server side). The signaling server mints SHORT-LIVED coturn
  * credentials (use-auth-secret / "REST API" scheme) so a 1:1 pair that can't connect directly can
  * fall back to a relay in Reliable mode:
- *   - username = a FUTURE unix-expiry (Math.floor(now/1000) + TURN_CRED_TTL_S);
+ *   - username = a FUTURE unix-expiry (Math.floor(now/1000) + TURN_CRED_TTL_S) plus a per-mint id (`<expiry>:<16 hex>`);
  *   - credential = base64(HMAC-SHA1(TURN_SECRET, username)) — coturn recomputes this + checks expiry;
  *   - the shared TURN_SECRET lives ONLY on the server; only the derived per-session credential is sent.
  * When TURN is unconfigured (empty TURN_SECRET) the server answers with EMPTY urls so the client
- * stays direct-only — never an error. The handler is gated on `cfg.managed` (filetransfer) and is
- * bounded by the existing per-socket message rate-limit (no separate limiter).
+ * stays direct-only — never an error. The handler is gated on `cfg.managed` (filetransfer) and
+ * mints are rate-limited per remote IP (TURN_RL_MAX per TURN_RL_WINDOW_MS); over budget the answer is empty too.
  *
  * Each concern spawns its OWN signaling server (own port + env) and drives it with Node's global
  * WebSocket (undici), setting the Origin the server requires.
@@ -87,8 +87,8 @@ afterEach(() => {
   for (const c of live.splice(0)) c.close();
 });
 
-function client(port: number, query: string): TestClient {
-  const c = new TestClient(`ws://127.0.0.1:${port}?${query}`, { Origin: ORIGIN });
+function client(port: number, query: string, ip?: string): TestClient {
+  const c = new TestClient(`ws://127.0.0.1:${port}?${query}`, ip ? { Origin: ORIGIN, 'X-Real-IP': ip } : { Origin: ORIGIN });
   live.push(c);
   return c;
 }
@@ -148,9 +148,19 @@ async function startServer(port: number, extraEnv: Record<string, string>): Prom
   return proc;
 }
 
+async function waitForCount(c: TestClient, type: string, n: number, timeoutMs = 3000): Promise<{ urls: string[]; username: string }[]> {
+  const start = Date.now();
+  for (;;) {
+    const hits = c.messages.filter((m) => m.type === type);
+    if (hits.length >= n) return hits as unknown as { urls: string[]; username: string }[];
+    if (Date.now() - start > timeoutMs) throw new Error(`timeout waiting for ${n} '${type}' frames (got ${hits.length})`);
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
 /** Create a 4-digit room and return the live socket (the message handler is attached after join). */
-async function createRoom(port: number): Promise<TestClient> {
-  const a = client(port, 'app=filetransfer&create=1');
+async function createRoom(port: number, ip?: string): Promise<TestClient> {
+  const a = client(port, 'app=filetransfer&create=1', ip);
   await a.opened();
   await a.waitFor('welcome');
   return a;
@@ -187,8 +197,9 @@ describe('turn-request → turn-credentials (configured)', () => {
     ]);
     // ttl echoes TURN_CRED_TTL_S.
     expect(creds.ttl).toBe(Number(TTL));
-    // username is a FUTURE unix-expiry ≈ now + ttl (coturn validates this).
-    const expiry = Number(creds.username);
+    // username is a FUTURE unix-expiry ≈ now + ttl (coturn validates this) plus a per-mint id.
+    expect(creds.username).toMatch(/^\d+:[0-9a-f]{16}$/);
+    const expiry = Number(creds.username.split(':')[0]);
     expect(Number.isInteger(expiry)).toBe(true);
     expect(expiry).toBeGreaterThanOrEqual(beforeS + Number(TTL));
     expect(expiry).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + Number(TTL) + 2);
@@ -196,6 +207,47 @@ describe('turn-request → turn-credentials (configured)', () => {
     const expected = createHmac('sha1', SECRET).update(creds.username).digest('base64');
     expect(creds.credential).toBe(expected);
     expect(creds.credential.length).toBeGreaterThan(0);
+  });
+
+  it('mints a different username every time, so coturn counts its user-quota per credential', async () => {
+    const a = await createRoom(PORT);
+    a.send({ type: 'turn-request' });
+    a.send({ type: 'turn-request' });
+    const both = await waitForCount(a, 'turn-credentials', 2);
+    expect(both[0].username).not.toBe(both[1].username);
+  });
+});
+
+describe('turn-request → turn-credentials (per-IP mint limit)', () => {
+  const PORT = 8111;
+  const SECRET = 'test-shared-secret-deadbeef';
+  let server: ChildProcess;
+  beforeAll(async () => {
+    server = await startServer(PORT, {
+      TRUST_PROXY: '1',
+      TURN_SECRET: SECRET,
+      TURN_URLS: 'turn:turn.example.org:3478',
+      TURN_RL_MAX: '2',
+      TURN_RL_WINDOW_MS: '60000',
+    });
+  });
+  afterAll(() => {
+    server?.kill();
+  });
+
+  it('answers with empty urls once one IP is over budget, and still serves another IP', async () => {
+    const a = await createRoom(PORT, '203.0.113.7');
+    for (let i = 0; i < 3; i++) a.send({ type: 'turn-request' });
+    const got = await waitForCount(a, 'turn-credentials', 3);
+    expect(got[0].urls).toEqual(['turn:turn.example.org:3478']);
+    expect(got[1].urls).toEqual(['turn:turn.example.org:3478']);
+    expect(got[2].urls).toEqual([]);
+    expect(got[2].username).toBe('');
+
+    const b = await createRoom(PORT, '203.0.113.8');
+    b.send({ type: 'turn-request' });
+    const other = (await b.waitFor('turn-credentials')) as unknown as { urls: string[] };
+    expect(other.urls).toEqual(['turn:turn.example.org:3478']);
   });
 });
 

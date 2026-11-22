@@ -62,14 +62,15 @@ min-port=@MIN_PORT@
 max-port=@MAX_PORT@
 
 # --- Quotas and bandwidth ----------------------------------------------------------
-# user-quota counts per USERNAME, and the signaling server mints the username as
-# the bare expiry second — so it is a per-second bucket, not a per-user one.
+# user-quota counts per USERNAME, and the signaling server mints a unique
+# username per credential (`<expiry>:<random>`) — so it is a per-credential limit.
 user-quota=@USER_QUOTA@
 total-quota=@TOTAL_QUOTA@
 # Per-session ceiling in BYTES per second (5000000 = 5 MB/s). Measured
 # 2026-09-19: it is what binds on a fast path (3.84 MB/s through the live relay
 # vs 24.81 MB/s uncapped) and is still well above a residential uplink.
 max-bps=@MAX_BPS@
+bps-capacity=@BPS_CAPACITY@
 
 # --- Anti-SSRF (do not remove) -----------------------------------------------------
 # A relay forwards to whatever peer a client names. These keep it from relaying

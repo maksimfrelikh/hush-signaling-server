@@ -135,6 +135,8 @@ const TURN_SECRET     = process.env.TURN_SECRET || '';                       // 
 const TURN_URLS       = (process.env.TURN_URLS || '')                        // comma-separated turn(s):… URIs → array; '' ⇒ relay disabled
   .split(',').map((s) => s.trim()).filter(Boolean);
 const TURN_CRED_TTL_S = Number(process.env.TURN_CRED_TTL_S) || 3600;         // credential lifetime (~1h); the username embeds the unix-expiry
+const TURN_RL_MAX       = Number(process.env.TURN_RL_MAX)       || 10;       // credentials minted per window per remote IP
+const TURN_RL_WINDOW_MS = Number(process.env.TURN_RL_WINDOW_MS) || 600000;   // window length (~10 min)
 // Dev-only origin allowlist for a Vite dev server. Overridable (comma-separated) ONLY so a test run
 // can serve the app on another port when 5173 is taken on the host — production is unaffected, the
 // whole list is empty unless NODE_ENV !== 'production'. Without this, an app served anywhere but
@@ -272,6 +274,15 @@ function attemptRateLimited(ip) {
   if (!rec || now - rec.windowStart > IP_RL_WINDOW_MS) { rec = { windowStart: now, count: 0 }; ipAttempts.set(ip, rec); }
   rec.count++;
   return rec.count > IP_RL_MAX;
+}
+const turnMints = new Map(); // ip -> { windowStart, count } — per-IP TURN credential mint rate
+function turnRateLimited(ip) {
+  if (isLoopback(ip)) return false;
+  const now = Date.now();
+  let rec = turnMints.get(ip);
+  if (!rec || now - rec.windowStart > TURN_RL_WINDOW_MS) { rec = { windowStart: now, count: 0 }; turnMints.set(ip, rec); }
+  rec.count++;
+  return rec.count > TURN_RL_MAX;
 }
 // Invalidate a managed room: notify its members (except an optional initiator), close their sockets
 // (4010), free the rendezvous code, and cancel the TTL. Used by the TTL timer (reason 'expired') and
@@ -434,17 +445,19 @@ wss.on('connection', (ws, req) => {
     }
     // TURN credentials for the Reliable / relay-fallback mode (MANAGED apps only — the file-transfer
     // rendezvous; clipboard has no server fallback). The client asks when a direct path fails. We mint
-    // a SHORT-LIVED coturn credential (use-auth-secret scheme): the username is a FUTURE unix-expiry,
-    // and the credential is base64(HMAC-SHA1(static-auth-secret, username)). coturn recomputes the same
+    // a SHORT-LIVED coturn credential (use-auth-secret scheme): the username is a FUTURE unix-expiry
+    // plus a random id (`<expiry>:<16 hex>` — unique per mint, so coturn's user-quota counts per
+    // credential), and the credential is base64(HMAC-SHA1(static-auth-secret, username)). coturn recomputes the same
     // HMAC and enforces the expiry, so the shared secret never leaves this process — only the derived
     // per-session credential is sent. If TURN is unconfigured (no TURN_SECRET) OR the app isn't managed,
     // we answer with EMPTY urls so the client treats relay as unavailable and stays direct-only — never
-    // an error, never a leak. Bounded by the per-socket message rate-limit above (no extra limiter).
+    // an error, never a leak. Mints are rate-limited per remote IP (TURN_RL_MAX per TURN_RL_WINDOW_MS,
+    // loopback exempt); a caller over budget gets the same EMPTY answer.
     if (msg.type === 'turn-request') {
-      if (!cfg.managed || !TURN_SECRET) {
+      if (!cfg.managed || !TURN_SECRET || turnRateLimited(ws._ip)) {
         return sendJSON(ws, { type: 'turn-credentials', urls: [], username: '', credential: '', ttl: 0 });
       }
-      const username = String(Math.floor(Date.now() / 1000) + TURN_CRED_TTL_S); // unix-expiry coturn checks
+      const username = `${Math.floor(Date.now() / 1000) + TURN_CRED_TTL_S}:${randomBytes(8).toString('hex')}`; // unix-expiry coturn checks + a per-mint id
       const credential = createHmac('sha1', TURN_SECRET).update(username).digest('base64');
       return sendJSON(ws, { type: 'turn-credentials', urls: TURN_URLS, username, credential, ttl: TURN_CRED_TTL_S });
     }
@@ -480,6 +493,7 @@ const interval = setInterval(() => {
   // Prune stale per-IP attempt windows so the map can't grow unbounded with one-shot IPs.
   const now = Date.now();
   for (const [ip, rec] of ipAttempts) if (now - rec.windowStart > IP_RL_WINDOW_MS) ipAttempts.delete(ip);
+  for (const [ip, rec] of turnMints) if (now - rec.windowStart > TURN_RL_WINDOW_MS) turnMints.delete(ip);
 }, HEARTBEAT_MS);
 wss.on('close', () => clearInterval(interval));
 function sendJSON(ws, obj) {
@@ -512,7 +526,8 @@ server.listen(PORT, HOST, () => {
       ` roomTtlMs=${ROOM_TTL_MS}` +
       ` wordRoomTtlMs=${WORD_ROOM_TTL_MS}` +
       ` tokenRoomTtlMs=${TOKEN_ROOM_TTL_MS}` +
-      ` ipRlMax=${IP_RL_MAX}/${IP_RL_WINDOW_MS}ms`,
+      ` ipRlMax=${IP_RL_MAX}/${IP_RL_WINDOW_MS}ms` +
+      ` turnRlMax=${TURN_RL_MAX}/${TURN_RL_WINDOW_MS}ms`,
   );
   if (!TRUST_PROXY) {
     console.warn(

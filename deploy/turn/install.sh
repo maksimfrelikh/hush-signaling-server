@@ -103,12 +103,14 @@ if [ "$IMPORT" -eq 1 ]; then
       echo "USER_QUOTA=$(current user-quota || true)"
       echo "TOTAL_QUOTA=$(current total-quota || true)"
       echo "MAX_BPS=$(current max-bps || true)"
+      echo "BPS_CAPACITY=$(current bps-capacity || true)"
     } >"$SITE_ENV"
   )
   # coturn's own defaults for what the old file left unset
   sed -i -e 's/^LISTEN_PORT=$/LISTEN_PORT=3478/' -e 's/^TLS_LISTEN_PORT=$/TLS_LISTEN_PORT=5349/' \
     -e 's/^MIN_PORT=$/MIN_PORT=49152/' -e 's/^MAX_PORT=$/MAX_PORT=65535/' \
-    -e 's/^USER_QUOTA=$/USER_QUOTA=0/' -e 's/^TOTAL_QUOTA=$/TOTAL_QUOTA=0/' -e 's/^MAX_BPS=$/MAX_BPS=0/' "$SITE_ENV"
+    -e 's/^USER_QUOTA=$/USER_QUOTA=0/' -e 's/^TOTAL_QUOTA=$/TOTAL_QUOTA=0/' -e 's/^MAX_BPS=$/MAX_BPS=0/' \
+    -e 's/^BPS_CAPACITY=$/BPS_CAPACITY=0/' "$SITE_ENV"
   say "wrote $SITE_ENV from $PREVIOUS (set RELAY_IP if it is empty):"
   sed 's/^/    /' "$SITE_ENV"
 fi

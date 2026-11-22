@@ -161,4 +161,13 @@ its result: it also depends on the router hairpinning the public address.
 
 One UDP port per allocation, two when both sides of a pair relay: 49160–49200 is ~41 allocations,
 whatever `total-quota` says. To serve more, widen `MIN_PORT`–`MAX_PORT` in `turn.env`, the firewall
-and the router together. `MAX_BPS` (5 MB/s per session) is what binds on a fast path.
+and the router together.
+
+Three more limits, all in `turn.env` (netcup: 2 MB/s × 10 allocations = 20 MB/s, 2 per credential):
+
+- `MAX_BPS` — per allocation, bytes per second each way; it is what binds on a fast path.
+- `BPS_CAPACITY` — server-wide, `0` = none. coturn RESERVES `MAX_BPS` against it for every allocation
+  and refuses a new one with 486 once it is spent (measured 2026-11-22 on 4.19.2), so it also caps
+  concurrent allocations at `BPS_CAPACITY / MAX_BPS`.
+- `USER_QUOTA` — allocations per credential: the signaling server mints a unique username on every
+  `turn-request`, and limits mints per remote IP (`TURN_RL_MAX` per `TURN_RL_WINDOW_MS` in its `.env`).
