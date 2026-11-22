@@ -22,11 +22,10 @@
 # for TURN_URLS only — it never reads, prints or needs TURN_SECRET. The credential it uses is minted
 # over the WebSocket exactly as a browser would, so this exercises the real path, not a reimplementation.
 #
-# Needs: node (for the WebSocket), and coturn's turnutils_uclient or docker to run it from the image.
+# Needs: node (for the WebSocket and for relay-probe.mjs, which opens the allocations).
 set -euo pipefail
 
-# shellcheck source=deploy/turn/lib.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 SIGNALING_URL="${SIGNALING_URL:-ws://127.0.0.1:8080}"
 ORIGIN="${ORIGIN:-https://hushsend.frelikh.dev}"
@@ -39,7 +38,6 @@ fail() {
 }
 
 command -v node >/dev/null || fail "node not found"
-command -v "${TURN_UCLIENT[0]}" >/dev/null || fail "neither turnutils_uclient nor docker found"
 
 bold "▶ mint a credential from the live signaling server"
 # Node's global WebSocket (22+). Prints "urls<TAB>username<TAB>credential" or exits non-zero.
@@ -84,13 +82,12 @@ TURN_PORT=${HOSTPORT##*:}
 [ "$TURN_PORT" = "$TURN_HOST" ] && TURN_PORT=3478
 
 bold "▶ open a real allocation on $TURN_HOST:$TURN_PORT and push data through it"
-OUT=$("${TURN_UCLIENT[@]}" -y -u "$USERNAME" -w "$CREDENTIAL" -p "$TURN_PORT" -n 4 -m 1 "$TURN_HOST" 2>&1 || true)
-RELAYED=$(printf '%s' "$OUT" | grep -oE 'tot_recv_msgs=[0-9]+' | tail -1 | cut -d= -f2 || true)
+OUT=$(TURN_USERNAME="$USERNAME" TURN_CREDENTIAL="$CREDENTIAL" node "$HERE/relay-probe.mjs" "$TURN_HOST" "$TURN_PORT" 2>&1 || true)
+RELAYED=$(printf '%s' "$OUT" | sed -n 's/^relayed \([0-9]*\) of .*/\1/p' | tail -1)
 RELAYED=${RELAYED:-0}
 
 if [ "$RELAYED" -gt 0 ]; then
   printf '  relayed   : %s messages\n' "$RELAYED"
-  printf '%s\n' "$OUT" | grep -E 'Total lost packets|round trip delay' | sed 's/^/  /' || true
   bold "▶ OK — the live signaling server and coturn share the same secret, and the relay carries data"
   exit 0
 fi
