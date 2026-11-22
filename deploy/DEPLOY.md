@@ -82,10 +82,10 @@ comments of [`turn/turnserver.conf.template`](turn/turnserver.conf.template).
 | `turn/turnserver.conf.template` | the coturn config, with per-host values as `@…@` |
 | `turn/turn.env.example` | the per-host values; on a host they live in `/etc/hushsend-turn/turn.env` (0600) |
 | `turn/render.sh` | renders the template; the secret comes in as `STATIC_AUTH_SECRET` |
-| `turn/install.sh` | renders with the secret from the signaling `.env`, installs `/etc/turnserver.conf`, restarts coturn, checks, rolls back on failure |
+| `turn/install.sh` | renders with the secret from the signaling `.env`, installs `/etc/hushsend-turn/turnserver.conf`, (re)creates the `hushsend-turn` container from the pinned image, checks, rolls back on failure |
 | `turn/verify-relay.sh` | end to end: mints a credential from the LIVE signaling server and pushes data through the relay |
 | `turn/check-template.sh` | CI: the template loads in a real coturn, authenticates with the secret and refuses TCP relays — the last two each with a negative control |
-| `turn/lib.sh` | the shared checks |
+| `turn/lib.sh` | the shared checks, and `COTURN_IMAGE` — the coturn image, pinned by digest |
 
 ### 4.2 laptop-server: take over the coturn that already runs
 
@@ -129,8 +129,8 @@ must not appear in it at all.
 ```bash
 sudo mkdir -p /etc/hushsend-turn && sudo chmod 700 /etc/hushsend-turn
 sudo cp deploy/turn/turn.env.example /etc/hushsend-turn/turn.env && sudo chmod 600 /etc/hushsend-turn/turn.env
-sudo nano /etc/hushsend-turn/turn.env      # REALM, EXTERNAL_IP if behind NAT, the relay range
-sudo bash deploy/turn/install.sh           # installs coturn itself if it is missing
+sudo nano /etc/hushsend-turn/turn.env      # REALM, RELAY_IP, EXTERNAL_IP if behind NAT, the relay range
+sudo bash deploy/turn/install.sh           # needs Docker: pulls the image, creates the user hushsend-turn
 ```
 
 Open in the firewall (and forward on the router, behind NAT): `LISTEN_PORT` tcp+udp and the whole

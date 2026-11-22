@@ -23,10 +23,19 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node --check signaling-server.js
-      # coturn from Ubuntu — 4.6.1, the version netcup runs. The package starts its own
-      # coturn.service on 3478; nothing here uses that port.
-      - name: Install coturn
-        run: sudo apt-get update -qq && sudo apt-get install -y coturn
+      # coturn as netcup runs it: the image pinned in deploy/turn/lib.sh, behind wrappers named like
+      # its binaries, so the tests and check-template.sh run it unchanged. /tmp and /var/tmp are
+      # shared: configs written there reach coturn, and a log file it writes there is seen.
+      - name: coturn from the pinned image
+        run: |
+          image=$(sed -n 's/^COTURN_IMAGE=//p' deploy/turn/lib.sh)
+          docker pull -q "$image"
+          for tool in turnserver turnutils_stunclient turnutils_uclient; do
+            printf '#!/bin/sh\nexec docker run --rm --init --network host --user %s -v /tmp:/tmp -v /var/tmp:/var/tmp --entrypoint %s %s "$@"\n' \
+              "$(id -u):$(id -g)" "$tool" "$image" | sudo tee "/usr/local/bin/$tool" >/dev/null
+            sudo chmod +x "/usr/local/bin/$tool"
+          done
+          turnserver --version
       # turn-relay.test.ts is the only check anywhere that a credential this server mints opens an
       # allocation on a coturn holding the same secret, and that one minted from another secret is
       # refused. REQUIRE_RELAY_TEST=1 turns "coturn missing" from a skip into a failure.

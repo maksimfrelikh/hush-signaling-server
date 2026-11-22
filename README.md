@@ -12,7 +12,7 @@ This repo is the whole server side its operator runs:
 | Part | What | Runs as |
 |---|---|---|
 | signaling | `signaling-server.js` — Node + `ws` | systemd `hushsend-signaling`, loopback `:8080` behind nginx |
-| TURN relay | coturn config for hushsend's Reliable mode — [`deploy/turn/`](deploy/turn/) | the distro's `coturn.service` |
+| TURN relay | coturn config for hushsend's Reliable mode — [`deploy/turn/`](deploy/turn/) | Docker container `hushsend-turn` (coturn's official image, host network) |
 
 They share one secret (`TURN_SECRET` = coturn's `static-auth-secret`), which is why they live together;
 the installer renders coturn's copy from the signaling `.env`. **STUN** for hushsend clients is a

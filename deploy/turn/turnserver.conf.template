@@ -1,8 +1,8 @@
 # ============================================================================
 # hush-signaling-server — coturn as the TURN relay for hushsend's Reliable mode
 # ============================================================================
-# TEMPLATE. deploy/turn/install.sh renders it into /etc/turnserver.conf. Do not
-# edit the rendered file on the host: change this template (or the host's
+# TEMPLATE. deploy/turn/install.sh renders it into /etc/hushsend-turn/turnserver.conf.
+# Do not edit the rendered file on the host: change this template (or the host's
 # /etc/hushsend-turn/turn.env) and run the installer again.
 #
 #   Values written as @…@ below are filled in per host from
@@ -21,9 +21,10 @@
 # operator, so that Max privacy never contacts this host at all. Where they
 # point today: VITE_STUN_URLS in hushsend's deploy/build-env.sh.
 #
-# Verified against coturn 4.6.1 (Ubuntu): CI renders this file, starts coturn
-# with it and checks STUN, a correct credential, a wrong one and a TCP relay
-# request — deploy/turn/check-template.sh. Re-run that after any edit here.
+# Verified against the coturn image the host runs (COTURN_IMAGE in lib.sh): CI
+# renders this file, starts that coturn with it and checks STUN, a correct
+# credential, a wrong one and a TCP relay request — deploy/turn/check-template.sh.
+# Re-run that after any edit here.
 # ----------------------------------------------------------------------------
 
 # --- Time-limited credentials (REST API scheme) -------------------------------
@@ -36,6 +37,12 @@ realm=@REALM@
 
 # --- Listening -----------------------------------------------------------------
 listening-ip=0.0.0.0
+# Relays bind to this IPv4 address. Unset, each coturn thread picks a local
+# address at its first allocation and keeps it: one request for an IPv6 relay
+# (anyone can mint a credential) turns a thread to IPv6 for good, and every IPv4
+# allocation it serves fails with 440 until a restart — seen on netcup on
+# 2026-11-22, the same code in 4.6.1 and 4.19.2. Behind NAT: the PRIVATE address.
+relay-ip=@RELAY_IP@
 # Behind NAT coturn must advertise the PUBLIC address in relay candidates, not
 # its private one ("PUBLIC/PRIVATE"). The installer comments this line out when
 # EXTERNAL_IP is empty (a host with a public address of its own).
@@ -93,8 +100,8 @@ no-tcp-relay
 
 # --- Misc ------------------------------------------------------------------------------
 fingerprint
-# No admin CLI: no remote-management surface.
-no-cli
+# No admin CLI, and no `no-cli` line: coturn 4.18+ starts the CLI only with `cli`
+# and reports `no-cli` as an error — printed before log-file is read.
 # Do not advertise the coturn version to the internet.
 no-software-attribute
 

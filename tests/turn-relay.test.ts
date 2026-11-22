@@ -43,9 +43,10 @@ function have(bin: string): boolean {
 }
 const HAVE_COTURN = have('turnserver') && have('turnutils_uclient');
 
-// coturn 4.18 (Homebrew) no longer has the admin CLI or the DTLS switch, and fails to start when told
-// `--no-cli` / `--no-dtls`; 4.6 (Ubuntu, laptop-server, CI) needs `--no-cli` before it accepts
-// `--allow-loopback-peers`. So the two flags go only to the old line.
+// coturn 4.18+ (Homebrew; CI and netcup run the image pinned in deploy/turn/lib.sh) no longer has the
+// admin CLI or the DTLS switch, and fails to start when told `--no-cli` / `--no-dtls`; 4.6 (Ubuntu's
+// package) needs `--no-cli` before it accepts `--allow-loopback-peers`. So the two flags go only to
+// the old line.
 const COTURN_VERSION = HAVE_COTURN
   ? (spawnSync('turnserver', ['--version'], { encoding: 'utf8' }).stdout ?? '').trim()
   : '';

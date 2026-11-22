@@ -23,13 +23,13 @@ fi
 
 # turn.env is ours: plain KEY=value lines. Read it in a subshell-free way and
 # export only the keys we know, so nothing else in the file leaks into the run.
-REALM= LISTEN_PORT= TLS_LISTEN_PORT= EXTERNAL_IP= MIN_PORT= MAX_PORT= USER_QUOTA= TOTAL_QUOTA= MAX_BPS=
+REALM= LISTEN_PORT= TLS_LISTEN_PORT= RELAY_IP= EXTERNAL_IP= MIN_PORT= MAX_PORT= USER_QUOTA= TOTAL_QUOTA= MAX_BPS=
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in '' | '#'*) continue ;; esac
   key=${line%%=*}
   val=${line#*=}
   case "$key" in
-    REALM | LISTEN_PORT | TLS_LISTEN_PORT | EXTERNAL_IP | MIN_PORT | MAX_PORT | USER_QUOTA | TOTAL_QUOTA | MAX_BPS)
+    REALM | LISTEN_PORT | TLS_LISTEN_PORT | RELAY_IP | EXTERNAL_IP | MIN_PORT | MAX_PORT | USER_QUOTA | TOTAL_QUOTA | MAX_BPS)
       printf -v "$key" '%s' "$val" ;;
     *) echo "render: $ENV_FILE: unknown key '$key' (ignored)" >&2 ;;
   esac
@@ -44,11 +44,13 @@ for v in LISTEN_PORT TLS_LISTEN_PORT MIN_PORT MAX_PORT USER_QUOTA TOTAL_QUOTA MA
 done
 [ "$MIN_PORT" -lt "$MAX_PORT" ] || fail "MIN_PORT ($MIN_PORT) must be below MAX_PORT ($MAX_PORT)"
 [ "$LISTEN_PORT" != "$TLS_LISTEN_PORT" ] || fail "LISTEN_PORT and TLS_LISTEN_PORT must differ"
+[[ "$RELAY_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] ||
+  fail "$ENV_FILE: RELAY_IP must be this host's IPv4 address that relays bind to (the private one behind NAT), got '$RELAY_IP'"
 if [ -n "$EXTERNAL_IP" ] && ! [[ "$EXTERNAL_IP" =~ ^[0-9a-fA-F.:]+(/[0-9a-fA-F.:]+)?$ ]]; then
   fail "EXTERNAL_IP must be PUBLIC or PUBLIC/PRIVATE, got '$EXTERNAL_IP'"
 fi
 
-export STATIC_AUTH_SECRET REALM LISTEN_PORT TLS_LISTEN_PORT EXTERNAL_IP MIN_PORT MAX_PORT USER_QUOTA TOTAL_QUOTA MAX_BPS
+export STATIC_AUTH_SECRET REALM LISTEN_PORT TLS_LISTEN_PORT RELAY_IP EXTERNAL_IP MIN_PORT MAX_PORT USER_QUOTA TOTAL_QUOTA MAX_BPS
 
 out=$(awk '
   function repl(s, key, val,    out, i) {
@@ -65,7 +67,7 @@ out=$(awk '
       print "# external-ip is not set: this host has its public address on an interface"
       next
     }
-    n = split("STATIC_AUTH_SECRET REALM LISTEN_PORT TLS_LISTEN_PORT EXTERNAL_IP MIN_PORT MAX_PORT USER_QUOTA TOTAL_QUOTA MAX_BPS", keys, " ")
+    n = split("STATIC_AUTH_SECRET REALM LISTEN_PORT TLS_LISTEN_PORT RELAY_IP EXTERNAL_IP MIN_PORT MAX_PORT USER_QUOTA TOTAL_QUOTA MAX_BPS", keys, " ")
     for (k = 1; k <= n; k++) line = repl(line, "@" keys[k] "@", ENVIRON[keys[k]])
     print line
   }

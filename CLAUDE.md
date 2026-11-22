@@ -31,8 +31,8 @@ Node + `ws`) and the config of the TURN relay (`deploy/turn/`). Start with [READ
   same commit as the `process.env` read.
 - **`TURN_SECRET` exists in two places on a host — the signaling `.env` and coturn's config — and
   the second is rendered from the first** by `deploy/turn/install.sh`. Never edit
-  `/etc/turnserver.conf` by hand: change the template or the host's `/etc/hushsend-turn/turn.env`
-  and re-run the installer.
+  `/etc/hushsend-turn/turnserver.conf` by hand: change the template or the host's
+  `/etc/hushsend-turn/turn.env` and re-run the installer.
 - **coturn must not log.** `log-file=/dev/null` stays in the template; `check-template.sh` fails if
   coturn writes a log file or prints to stdout (an option it does not know prints a warning and
   creates `/var/tmp/turn_*.log` before `log-file` is read — that is why `no-loopback-peers` is gone).
@@ -50,8 +50,8 @@ Node + `ws`) and the config of the TURN relay (`deploy/turn/`). Start with [READ
 (`turn-relay.test.ts` needs `turnserver` + `turnutils_uclient`; it skips without them unless
 `REQUIRE_RELAY_TEST=1`). Each file spawns its own server on a fixed loopback port (8091–8110, TURN
 3489) — keep new ones distinct, files run in parallel. `bash deploy/turn/check-template.sh` checks
-the TURN template against a real coturn. CI runs all of it on every push (coturn 4.6.1 from Ubuntu,
-the version netcup runs).
+the TURN template against a real coturn. CI runs all of it on every push, against the coturn image
+netcup runs (`COTURN_IMAGE` in `deploy/turn/lib.sh`).
 
 On the Mac the Bash sandbox cannot bind ports: run the suite in a terminal tab
 (`PATH=/opt/homebrew/bin:$PATH npx vitest run`). Homebrew's coturn is 4.18, which no longer knows
